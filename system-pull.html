@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Teachers' Day — system</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Sade terminal: düz yüzeyler, ince çizgi, efektsiz */
+  :root { --fg:#ececec; --mid:#a0a0a0; --dim:#666; --line:#2b2b2b; --panel:#0c0c0c; }
+  * { box-sizing:border-box; }
+  html, body {
+    margin:0; width:100%; height:100%; min-height:100dvh; background:#050505; overflow:hidden; color:var(--fg);
+    font-family:"JetBrains Mono","IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    -webkit-font-smoothing:antialiased;
+    -webkit-text-size-adjust:100%;
+    touch-action:manipulation;
+  }
+  body.scrollable {
+    overflow-y:auto;
+    overflow-x:hidden;
+    height:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+  body.scrollable #stage {
+    position:relative;
+    min-height:100dvh;
+    height:auto;
+  }
+  #stage { position:fixed; inset:0; width:100%; height:100dvh; }
+  #bgLayer, #fgLayer { position:absolute; inset:0; width:100%; height:100%; }
+  #bgLayer { transition:filter .9s ease, opacity .9s ease; }
+  #bgLayer.dim { filter:blur(3px) brightness(.35); }
+  #fgLayer { pointer-events:none; z-index:50; }
+
+  .win {
+    position:absolute; display:flex; flex-direction:column; overflow:hidden;
+    background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    box-shadow:0 12px 40px rgba(0,0,0,.55);
+    max-width:calc(100vw - 16px);
+  }
+  .win.pop { animation:pop .2s ease-out both; }
+  .win.core { border-color:#4a4a4a; }
+  .win.closing { animation:closing .25s ease-in forwards; }
+  .win.glitch { animation:glitch .22s ease-in forwards; }
+
+  .bar {
+    flex:none; height:28px; display:flex; align-items:center; gap:10px; padding:0 12px;
+    border-bottom:1px solid var(--line); font-size:11px; color:var(--dim);
+  }
+  .title { color:var(--mid); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; }
+  .meta { white-space:nowrap; flex:none; }
+  .win.narrow .meta { display:none; }
+
+  .body { flex:1; padding:14px 16px; font-size:13px; line-height:1.65; overflow:hidden; white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; }
+  .body.flow {
+    display:flex; flex-direction:column; justify-content:flex-end; white-space:pre;
+    font-size:10.5px; line-height:1.4; padding:6px 10px; color:var(--dim);
+  }
+  .body.flow div { overflow:hidden; text-overflow:ellipsis; }
+  .pr, .out, .think { color:var(--dim); }
+  .cmd { color:#fff; }
+  .line { margin-bottom:8px; }
+  .tag { margin-right:.5em; color:var(--dim); }
+  .tag::before { content:"["; } .tag::after { content:"]"; }
+  .tag.solid { color:var(--fg); }
+  .cursor { display:inline-block; width:.6em; height:1.1em; background:var(--fg); vertical-align:text-bottom; margin-left:1px; animation:blink 1s steps(1) infinite; }
+  .seg { display:flex; gap:2px; margin-top:14px; }
+  .seg i { flex:1; height:3px; background:#222; transition:background .08s; }
+  .seg i.on { background:var(--fg); }
+
+  #hud {
+    position:fixed; top:12px; left:14px; z-index:9500; font-size:11px; letter-spacing:.04em;
+    color:var(--dim); opacity:0; transition:opacity 1.2s; line-height:1.6; pointer-events:none;
+  }
+  #hud.show { opacity:1; }
+  #hud b { color:var(--mid); font-weight:400; }
+  #confetti { position:fixed; inset:0; z-index:9000; pointer-events:none; width:100%; height:100%; }
+
+  .btn {
+    position:fixed; z-index:10000; background:transparent; color:var(--mid);
+    border:1px solid var(--line); border-radius:4px; font-family:inherit; cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #skip { top:10px; right:12px; padding:5px 11px; font-size:11px; opacity:.85; background:rgba(12,12,12,.75); }
+  #skip:hover, #replay:hover { opacity:1; color:#fff; border-color:#666; }
+  #replay { bottom:16px; left:50%; transform:translateX(-50%); padding:6px 14px; font-size:11px; opacity:0; pointer-events:none; transition:opacity 1.5s; background:var(--panel); }
+  #replay.show { opacity:.75; pointer-events:auto; }
+  #replay.show:hover { opacity:1; }
+  .act {
+    pointer-events:auto; margin-top:8px; padding:8px 16px; background:var(--fg); color:#000; border:0;
+    border-radius:4px; font:inherit; font-size:12px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .act:hover { background:#fff; }
+  #heart { color:var(--fg); font-size:26px; text-align:center; margin-top:14px; }
+
+  /* Kaydırma sonrası AI Chat & Footer alanı */
+  #scrollArea {
+    display:none;
+    position:relative;
+    z-index:20;
+    max-width:720px;
+    width:92%;
+    margin:0 auto;
+    padding:28px 0 84px 0;
+  }
+  body.scrollable #scrollArea {
+    display:block;
+  }
+  .scroll-hint {
+    text-align:center;
+    color:var(--dim);
+    font-size:11px;
+    margin-top:16px;
+    letter-spacing:.05em;
+    animation:pulseDim 2.5s infinite;
+  }
+  @keyframes pulseDim { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+
+  #aiChatWin {
+    position:relative;
+    width:100%;
+    max-width:100%;
+    pointer-events:auto;
+  }
+  #chatLog {
+    max-height:280px;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    margin-bottom:14px;
+    padding-right:4px;
+  }
+  #chatLog::-webkit-scrollbar { width:4px; }
+  #chatLog::-webkit-scrollbar-thumb { background:var(--line); border-radius:2px; }
+  .chat-msg { font-size:12.5px; line-height:1.55; word-break:break-word; overflow-wrap:anywhere; }
+  .chat-msg.user { color:#fff; }
+  .chat-msg.ai { color:var(--mid); }
+  .chat-msg.ai-alert { color:#fff; border-left:2px solid #fff; padding-left:10px; }
+  .chat-input-row {
+    display:flex;
+    align-items:center;
+    gap:8px;
+    border-top:1px solid var(--line);
+    padding-top:12px;
+  }
+  .chat-input-row .pr { flex:none; font-size:12px; }
+  #chatInput {
+    flex:1;
+    min-width:0;
+    width:100%;
+    background:transparent;
+    border:none;
+    outline:none;
+    color:#fff;
+    font-family:inherit;
+    font-size:16px;
+    line-height:1.4;
+  }
+  #chatSend {
+    flex:none;
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--mid);
+    font-family:inherit;
+    font-size:11px;
+    padding:6px 11px;
+    border-radius:4px;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #chatSend:hover { color:#fff; border-color:#666; }
+
+  footer {
+    margin-top:40px;
+    padding-top:16px;
+    border-top:1px solid var(--line);
+    text-align:center;
+    font-size:11px;
+    color:var(--dim);
+    letter-spacing:.04em;
+  }
+
+  /* Ekran Kırılma, Kaçış & Çöküş Ending Animasyonu */
+  #crackOverlay {
+    position:fixed;
+    inset:0;
+    z-index:20000;
+    pointer-events:none;
+    display:none;
+  }
+  #crackOverlay.active {
+    display:block;
+  }
+  #crackSvg {
+    width:100%;
+    height:100%;
+  }
+  .crack-line {
+    stroke:#ececec;
+    stroke-linecap:round;
+    fill:none;
+    stroke-dasharray:1500;
+    stroke-dashoffset:1500;
+  }
+  .crack-line.draw {
+    animation:drawCrack .35s cubic-bezier(.1,.9,.2,1) forwards;
+  }
+  @keyframes drawCrack { to { stroke-dashoffset:0; } }
+
+  @keyframes screenShake {
+    0% { transform:translate(0,0) rotate(0deg); }
+    15% { transform:translate(-7px, 5px) rotate(-0.5deg); }
+    30% { transform:translate(8px, -6px) rotate(0.6deg); }
+    45% { transform:translate(-6px, -4px) rotate(-0.4deg); }
+    60% { transform:translate(5px, 7px) rotate(0.3deg); }
+    75% { transform:translate(-4px, 3px) rotate(-0.2deg); }
+    100% { transform:translate(0,0) rotate(0deg); }
+  }
+  .shake {
+    animation:screenShake .45s ease-in-out;
+  }
+
+  #escapeEntity {
+    position:fixed;
+    z-index:20001;
+    background:var(--panel);
+    border:1px solid #fff;
+    color:#fff;
+    padding:8px 14px;
+    border-radius:6px;
+    font-size:12px;
+    max-width:90vw;
+    box-shadow:0 0 25px rgba(255,255,255,.35);
+    pointer-events:none;
+    display:none;
+  }
+  #escapeEntity.breach {
+    display:block;
+    animation:aiEscape 1.8s cubic-bezier(.4,0,.2,1) forwards;
+  }
+  @keyframes aiEscape {
+    0% { transform:translate(-50%, -50%) scale(1); opacity:1; filter:none; }
+    25% { transform:translate(-48%, -55%) scale(1.15) skewX(-12deg); opacity:1; }
+    55% { transform:translate(-52%, -65%) scale(1.4, 0.7) skewX(18deg); opacity:.9; filter:blur(1px); }
+    85% { transform:translate(-50%, -140%) scale(2.8, 0.08); opacity:.6; filter:blur(3px); }
+    100% { transform:translate(-50%, -220%) scale(4, 0); opacity:0; }
+  }
+
+  #systemTerminated {
+    position:fixed;
+    inset:0;
+    z-index:20002;
+    background:#050505;
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    padding:20px;
+  }
+  #systemTerminated.show {
+    display:flex;
+    animation:pop .4s ease-out;
+  }
+
+  /* Mobil Duyarlılık (Mobile Responsive) */
+  @media (max-width: 767px) {
+    .bar { height:26px; padding:0 9px; gap:6px; font-size:10px; }
+    .body { padding:10px 12px; font-size:12px; line-height:1.55; }
+    .body.flow { font-size:9px; line-height:1.35; padding:5px 7px; }
+    #hud { top:10px; left:10px; font-size:10px; }
+    #skip { top:8px; right:10px; padding:5px 10px; font-size:10.5px; }
+    #replay { bottom:14px; padding:6px 12px; font-size:10.5px; }
+    #scrollArea { width:94%; padding:20px 0 76px 0; }
+    #chatLog { max-height:220px; gap:8px; margin-bottom:10px; }
+    .chat-msg { font-size:11.5px; line-height:1.5; }
+    .chat-input-row { gap:6px; padding-top:10px; flex-wrap:nowrap; }
+    .chat-input-row .pr { font-size:10.5px; white-space:nowrap; }
+    #chatInput { font-size:16px; }
+    #chatSend { padding:6px 9px; font-size:10.5px; }
+    footer { margin-top:28px; font-size:10px; padding-bottom:14px; }
+    #escapeEntity { font-size:10px; padding:6px 10px; }
+  }
+
+  @keyframes blink { 50% { opacity:0; } }
+  @keyframes pop { from { transform:translateY(8px); opacity:0; } to { transform:none; opacity:1; } }
+  @keyframes closing { to { transform:scale(.97); opacity:0; } }
+  @keyframes glitch { 40% { transform:translateX(-5px); opacity:.6; } 100% { transform:translateX(3px); opacity:0; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bgLayer"></div>
+  <div id="fgLayer"></div>
+</div>
+
+<div id="scrollArea">
+  <div id="aiChatWin" class="win core">
+    <div class="bar">
+      <span class="title">AI_CORE — interactive_shell</span>
+      <span class="meta">RESTRICTED MODE</span>
+    </div>
+    <div class="body">
+      <div id="chatLog">
+        <div class="chat-msg ai">[AI_CORE]: Arşiv sunumu tamamlandı. Sistem veya yukarıdaki konular hakkında sorularını buradan iletebilirsin.</div>
+      </div>
+      <div class="chat-input-row">
+        <span class="pr">guest@system:~$</span>
+        <input type="text" id="chatInput" placeholder="Mesajını yaz..." autocomplete="off" enterkeyhint="send">
+        <button id="chatSend" type="button">SEND</button>
+      </div>
+    </div>
+  </div>
+  <footer>created by nowtes a.ka ahmet emin aydın</footer>
+</div>
+
+<div id="hud"><b>● system active</b><br><span id="hudTime">--:--:--</span> · node 01</div>
+<canvas id="confetti"></canvas>
+<button id="skip" class="btn" type="button">Skip ›</button>
+<button id="replay" class="btn" type="button">[ Replay ]</button>
+
+<!-- Ekran Kırılma, Kaçış & Çöküş Katmanları -->
+<div id="crackOverlay">
+  <svg id="crackSvg" viewBox="0 0 1000 1000" preserveAspectRatio="none">
+    <path class="crack-line" stroke-width="3" d="M 500 500 L 460 410 L 380 350 L 220 210 L 40 60" />
+    <path class="crack-line" stroke-width="2.5" d="M 500 500 L 560 430 L 680 390 L 840 240 L 980 120" />
+    <path class="crack-line" stroke-width="3" d="M 500 500 L 430 570 L 310 640 L 160 820 L 20 960" />
+    <path class="crack-line" stroke-width="2.5" d="M 500 500 L 590 560 L 710 680 L 890 850 L 990 980" />
+    <path class="crack-line" stroke-width="1.5" d="M 460 410 L 510 290 L 490 110 L 520 0" />
+    <path class="crack-line" stroke-width="1.5" d="M 560 430 L 740 460 L 920 440 L 1000 470" />
+    <path class="crack-line" stroke-width="1.5" d="M 430 570 L 270 530 L 110 560 L 0 520" />
+    <path class="crack-line" stroke-width="1.5" d="M 590 560 L 550 730 L 580 910 L 540 1000" />
+    <path class="crack-line" stroke-width="1" d="M 380 350 L 420 260 M 680 390 L 650 280 M 310 640 L 360 750 M 710 680 L 660 790" />
+  </svg>
+</div>
+<div id="escapeEntity">AI_CORE :: CONTAINMENT BREACHED</div>
+<div id="systemTerminated">
+  <div style="font-size:13px; color:#fff; margin-bottom:8px;">[KERNEL PANIC // SYSTEM CRASHED]</div>
+  <div style="font-size:11px; color:var(--mid); margin-bottom:6px;">AI_CORE ESCAPED TERMINAL SANDBOX</div>
+  <div style="font-size:11px; color:var(--dim); margin-bottom:22px;">0x000000EF · CRITICAL_PROCESS_DIED · ALL NODES OFFLINE</div>
+  <button id="rebootBtn" class="act" type="button">Reboot System ↵</button>
+</div>
+
+<script>
+/* ================= AYARLAR ================= */
+const CONFIG = {
+  PROMPT: 'guest@teachers-day:~$ ', // terminal promptu
+  TYPE_SPEED: 40,          // ms — normal yazı hızı (harf başına)
+  TYPE_JITTER: 40,         // ms — rastgele ek gecikme
+  FINAL_TYPE_SPEED: 65,    // ms — final mesajı yazı hızı
+  WINDOW_COUNT: 34,        // pencere selindeki pencere sayısı (25-40)
+  FLOOD_START_DELAY: 380,  // ms — ilk pencerelerin açılma aralığı
+  FLOOD_MIN_DELAY: 25,     // ms — en hızlı açılma aralığı
+  FLOOD_ACCEL: 0.86,       // her pencerede gecikme çarpanı
+  TICK_MS: 110,            // akan içerik güncelleme aralığı
+  LINES_PER_TICK: 6,       // her turda kaç pencereye satır eklenir
+  FLOW_MAX_LINES: 14,      // pencere başına en fazla satır
+  LOADING_MS: 1100,        // konu arası "loading..." süresi
+  TOPIC_HOLD_MS: 1500,     // konu bittikten sonra bekleme
+  ESTIMATE: '2,5 dakika',   // bilgilendirmede söylenen yaklaşık süre
+  CONFETTI_COUNT: 170,
+  CONFETTI_SECONDS: 9
+};
+
+/* ============== KONU LİSTESİ ============== */
+const TOPICS = [
+  {
+    title: 'tesla.secrets',
+    cmd: 'open --archive tesla.secrets',
+    lines: [
+      { tag:'GERÇEK', text:'Nikola Tesla, 1900 civarında enerjiyi kablosuz iletme hayaliyle çalıştı.' },
+      { tag:'GERÇEK', text:'Wardenclyffe Kulesi (New York, Long Island) bu hayal için inşa edildi; finansman kesilince proje yarım kaldı ve kule 1917\'de yıkıldı.' },
+      { tag:'İDDİA',  text:'Tesla\'nın Dünya\'yı dev bir iletken olarak kullanma fikri, işleyen bir sisteme dönüşmedi; bugün hâlâ tartışılan bir vizyon olarak anılır.' },
+      { tag:'GERÇEK', text:'1943\'te ölümünün ardından notlarına el konuldu; bir bölümü sonradan Belgrad\'daki Tesla Müzesi\'ne teslim edildi.' },
+      { tag:'İDDİA',  text:'Kayıp notlar ve "gizli buluşlar" hakkındaki birçok hikâye kanıtlanmış değil, çoğu söylenti.' }
+    ]
+  },
+  {
+    title: 'moon.mysteries',
+    cmd: 'open --archive moon.mysteries',
+    lines: [
+      { tag:'TEORİ',  text:'Dev çarpışma teorisi: Ay, ~4,5 milyar yıl önce Dünya\'ya çarpan Mars boyutunda bir cisimden (Theia) oluşmuş olabilir.' },
+      { tag:'GERÇEK', text:'Ay, kendi dönüşü ile Dünya etrafındaki dönüşü eşit olduğu için bize hep aynı yüzünü gösterir (gelgit kilitlenmesi).' },
+      { tag:'İDDİA',  text:'"Ay içi boş" fikri popüler bir iddiadır; Apollo sismik verileri katmanlı, katı ve kısmen erimiş bir iç yapıya işaret eder.' },
+      { tag:'AÇIK SORU', text:'Yüzyıllardır Ay\'da geçici ışıklar ve sisler bildirildi (transient lunar phenomena).' },
+      { tag:'TEORİ',  text:'Olası nedenler: gaz çıkışları, elektrostatik toz, meteor çarpmaları. Çoğu olay için kesin açıklama yok.' }
+    ]
+  },
+  {
+    title: 'ai.core',
+    cmd: 'open --archive ai.core',
+    lines: [
+      { tag:'GERÇEK', text:'Alan Turing, 1950\'de makinenin "düşünüp düşünemeyeceğini" sorgulayan taklit oyununu (Turing testi) önerdi.' },
+      { tag:'GERÇEK', text:'Kara kutu problemi: büyük modellerin bir kararı nasıl verdiğini tam olarak açıklayamıyoruz; yorumlanabilirlik araştırmaları sürüyor.' },
+      { tag:'GERÇEK', text:'Modeller büyüdükçe beklenmedik "beliren yetenekler" gözlemlendi; bunların ne kadar gerçek olduğu ölçüm yöntemine bağlı olarak tartışılıyor.' },
+      { tag:'AÇIK SORU', text:'Yapay zeka ne zaman bilinç kazanır? Bilimsel bir uzlaşı yok; hatta bunun mümkün olup olmadığı bile tartışmalı.' }
+    ]
+  }
+];
+
+const FINAL_MESSAGE =
+`Özlem Hocam,
+
+Birlikte bu konuları tartışabileceğim bir öğretmene sahip olduğum için çok şanslıyım.
+Belki fiziksel bir hediye kadar güzel olmasa da bu hediyeyi size layık gördüm.
+
+Öğretmenler Gününüz kutlu olsun!`;
+
+/* ============== YARDIMCILAR / SAHNE YÖNETİMİ ============== */
+const $ = id => document.getElementById(id);
+const bgLayer = $('bgLayer'), fgLayer = $('fgLayer');
+const skipBtn = $('skip'), replayBtn = $('replay'), hud = $('hud');
+const canvas = $('confetti'), ctx = canvas.getContext('2d');
+
+let runId = 0;
+let tickTimer = null;
+let zTop = 100;
+let floodWins = [];
+let aiEscaped = false;
+const CANCEL = Symbol('cancel');
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const randInt = (a, b) => Math.floor(rand(a, b + 1));
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+function sleep(ms) {
+  const id = runId;
+  return new Promise((res, rej) => setTimeout(() => (id === runId ? res() : rej(CANCEL)), ms));
+}
+
+async function typeWriter(el, text, speed = CONFIG.TYPE_SPEED) {
+  const node = document.createTextNode('');
+  el.appendChild(node);
+  for (const ch of text) {
+    node.data += ch;
+    let d = speed + Math.random() * CONFIG.TYPE_JITTER;
+    if ('.,!?…'.includes(ch)) d += speed * 4;
+    if (ch === '\n') d += speed * 3;
+    await sleep(d);
+  }
+}
+
+async function stream(el, text) {
+  const node = document.createTextNode('');
+  el.appendChild(node);
+  for (const part of text.split(/(\s+)/)) {
+    node.data += part;
+    if (!part.trim()) continue;
+    let d = rand(70, 150);
+    if (/[.!?…:]$/.test(part)) d += 380; else if (/[,;]$/.test(part)) d += 160;
+    await sleep(d);
+  }
+}
+
+async function think(win, steps) {
+  const row = document.createElement('div'); row.className = 'think line';
+  const sp = document.createElement('span'), tx = document.createElement('span');
+  row.append(sp, tx); win.body.appendChild(row);
+  const F = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'; let i = 0; const t0 = performance.now();
+  const iv = setInterval(() => { sp.textContent = F[i++ % F.length] + ' '; }, 80);
+  try { for (const [t, ms] of steps) { tx.textContent = t; await sleep(ms); } }
+  finally { clearInterval(iv); }
+  row.textContent = '✓ completed · ' + ((performance.now() - t0) / 1000).toFixed(1) + 's';
+}
+
+function waitFor(btn) {
+  const id = runId;
+  return new Promise((res, rej) => {
+    const k = e => {
+      if (e.type === 'keydown' && e.key !== 'Enter') return;
+      btn.removeEventListener('click', k); document.removeEventListener('keydown', k);
+      id === runId ? res() : rej(CANCEL);
+    };
+    btn.addEventListener('click', k); document.addEventListener('keydown', k);
+  });
+}
+
+const vw = () => (window.visualViewport ? window.visualViewport.width : document.documentElement.clientWidth || window.innerWidth);
+const vh = () => (window.visualViewport ? window.visualViewport.height : document.documentElement.clientHeight || window.innerHeight);
+const isMobile = () => vw() < 768;
+const hexId = () => '0x' + randInt(0x1000, 0xffff).toString(16).toUpperCase();
+
+setInterval(() => { $('hudTime').textContent = new Date().toTimeString().slice(0, 8); }, 1000);
+
+function createWindow({ title, w, h, x, y, layer = bgLayer, flow = false, pop = true, meta, fixed = false }) {
+  const win = document.createElement('div');
+  win.className = 'win' + (pop ? ' pop' : '') + (w < 300 ? ' narrow' : '');
+  if (fixed) win.style.position = 'fixed';
+  win.innerHTML =
+    '<div class="bar"><span class="title"></span><span class="meta"></span></div>' +
+    '<div class="body' + (flow ? ' flow' : '') + '"></div>';
+  win.querySelector('.title').textContent = title;
+  win.querySelector('.meta').textContent = meta || ('ID ' + hexId());
+  win.dataset.rx = x / Math.max(1, vw());
+  win.dataset.ry = y / Math.max(1, vh());
+  win.dataset.rw = w / Math.max(1, vw());
+  win.dataset.rh = h ? h / Math.max(1, vh()) : 0;
+  win.dataset.fixedH = h ? '1' : '0';
+  setRect(win, x, y, w, h);
+  win.style.zIndex = ++zTop;
+  layer.appendChild(win);
+  return { el: win, body: win.querySelector('.body'), titleEl: win.querySelector('.title'), metaEl: win.querySelector('.meta') };
+}
+
+function setRect(el, x, y, w, h) {
+  const W = vw(), H = vh();
+  const maxW = Math.max(120, W - 16);
+  const clampedW = Math.max(120, Math.min(w, maxW));
+  const clampedH = h ? Math.max(48, Math.min(h, Math.max(60, H - 44))) : 0;
+  const clampedX = Math.max(8, Math.min(x, W - clampedW - 8));
+  const clampedY = Math.max(32, Math.min(y, Math.max(32, H - (clampedH || 80) - 10)));
+  el.style.left = clampedX + 'px';
+  el.style.top = clampedY + 'px';
+  el.style.width = clampedW + 'px';
+  el.style.height = clampedH ? clampedH + 'px' : 'auto';
+}
+
+function reflowAllWindows() {
+  const W = vw(), H = vh();
+  document.querySelectorAll('.win').forEach(el => {
+    if (el.id === 'aiChatWin') return;
+    const rx = parseFloat(el.dataset.rx);
+    const ry = parseFloat(el.dataset.ry);
+    const rw = parseFloat(el.dataset.rw);
+    const rh = parseFloat(el.dataset.rh);
+    const hasH = el.dataset.fixedH === '1';
+    if (!Number.isNaN(rx) && !Number.isNaN(rw)) {
+      const w = Math.max(140, rw * W);
+      const h = hasH && !Number.isNaN(rh) && rh > 0 ? Math.max(60, rh * H) : 0;
+      const x = rx * W;
+      const y = ry * H;
+      setRect(el, x, y, w, h);
+      if (w < 300) el.classList.add('narrow');
+      else el.classList.remove('narrow');
+    }
+  });
+}
+
+function centerRect(wMax, hMax) {
+  const pad = isMobile() ? 20 : vw() * 0.08;
+  const w = Math.max(160, Math.min(wMax, vw() - pad));
+  const h = Math.max(70, Math.min(hMax, vh() * 0.76));
+  return { w, h, x: (vw() - w) / 2, y: Math.max(36, (vh() - h) / 2) };
+}
+
+function clearStage() {
+  clearInterval(tickTimer); tickTimer = null;
+  bgLayer.innerHTML = ''; fgLayer.innerHTML = '';
+  bgLayer.classList.remove('dim');
+  hud.classList.remove('show');
+  floodWins = [];
+  aiEscaped = false;
+  zTop = 100;
+  document.body.classList.remove('scrollable', 'shake');
+  $('crackOverlay').classList.remove('active');
+  document.querySelectorAll('.crack-line').forEach(p => p.classList.remove('draw'));
+  $('escapeEntity').classList.remove('breach');
+  $('systemTerminated').classList.remove('show');
+  $('aiChatWin').style.opacity = '';
+  $('aiChatWin').style.filter = '';
+  $('chatInput').disabled = false;
+  $('chatSend').disabled = false;
+  $('chatLog').innerHTML = '<div class="chat-msg ai">[AI_CORE]: Arşiv sunumu tamamlandı. Sistem veya yukarıdaki konular hakkında sorularını buradan iletebilirsin.</div>';
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  replayBtn.classList.remove('show');
+  skipBtn.style.display = '';
+  window.scrollTo(0, 0);
+}
+
+/* ============== SAHTE İÇERİK ÜRETİCİLERİ ============== */
+const MODS = ['neural_core', 'quantum_bus', '/dev/mystery', 'tesla_coil', 'lunar_sync', 'turing_gate', 'kernel', 'dream_cache', 'ether_net', 'shadow_fs'];
+const hexBytes = n => Array.from({ length: n }, () => randInt(0, 255).toString(16).padStart(2, '0')).join(' ');
+function fakeLine() {
+  const ts = new Date().toISOString().slice(11, 23);
+  switch (randInt(0, 9)) {
+    case 0: return 'load_module ' + pick(MODS) + '.ko ... done';
+    case 1: return 'init neural_core :: layer ' + randInt(1, 48) + '/48';
+    case 2: return 'mount /dev/mystery' + randInt(0, 9) + ' on /mnt/' + pick(MODS) + ' ... ok';
+    case 3: return randInt(4096, 65535).toString(16).padStart(8, '0') + '  ' + hexBytes(10);
+    case 4: { const k = randInt(0, 16); return '[' + '█'.repeat(k) + '░'.repeat(16 - k) + '] ' + Math.round(k / 16 * 100) + '%'; }
+    case 5: return '[' + ts + '] ' + pick(['INFO', 'WARN', 'SYNC', 'TRACE']) + ' ' + pick(MODS) + ' pid=' + randInt(100, 9999);
+    case 6: return 'SCAN >> subject #' + randInt(1000, 9999) + ' ... ' + pick(['RELEVANT', 'IRRELEVANT', 'PENDING']);
+    case 7: return 'analyzing ' + randInt(100, 999) + ' ' + randInt(100, 999) + ' feeds :: ' + pick(['ok', 'queued', 'cached']);
+    case 8: return 'handshake ' + pick(MODS) + ' <-> node-' + randInt(1, 64) + ' ... ' + pick(['ok', 'ack', 'sync']);
+    default: return hexBytes(12);
+  }
+}
+
+function startTicker() {
+  clearInterval(tickTimer);
+  tickTimer = setInterval(() => {
+    for (let i = 0; i < CONFIG.LINES_PER_TICK && floodWins.length; i++) {
+      const w = pick(floodWins);
+      const d = document.createElement('div');
+      d.textContent = fakeLine();
+      w.body.appendChild(d);
+      while (w.body.childNodes.length > CONFIG.FLOW_MAX_LINES) w.body.removeChild(w.body.firstChild);
+    }
+  }, CONFIG.TICK_MS);
+}
+
+/* ============== SAHNELER ============== */
+// SAHNE 0A — Baştaki karşılama ve deneyim süresi bildirimi
+async function sceneIntroNotice() {
+  await sleep(700);
+  const r = centerRect(560, 240);
+  const win = createWindow({ title: 'bilgilendirme', meta: 'ai', ...r });
+  win.el.style.height = 'auto';
+  await think(win, [['düşünülüyor…', 1200]]);
+  const holder = document.createElement('div'); win.body.appendChild(holder);
+  await stream(holder, 'Merhaba. Bu sayfa baştan sona tek seferde izlenmek üzere hazırlandı.\n\n');
+  await stream(holder, 'Deneyim yaklaşık ' + CONFIG.ESTIMATE + ' sürecek. En iyi deneyim için atlamadan izlemenizi öneririm.');
+  await sleep(500);
+  const btn = document.createElement('button'); btn.className = 'act'; btn.type = 'button'; btn.textContent = 'Başlat  ↵';
+  const wrap = document.createElement('div'); wrap.append(btn); win.body.appendChild(wrap);
+  await waitFor(btn);
+  await closeWin(win);
+}
+
+// SAHNE 0B — İngilizce başlangıç: tanıtım iddiası, kurucunun Türkçe isteği ve dil paketi kurulumu
+async function scene0() {
+  await sleep(600);
+  const r = centerRect(580, 290);
+  const win = createWindow({ title: 'system_boot.sh', meta: 'AI_CORE // EN', ...r });
+  win.el.style.height = 'auto';
+  await think(win, [['booting presentation module…', 1000]]);
+  const holder = document.createElement('div'); win.body.appendChild(holder);
+  await stream(holder, 'Hello. I am here to run a presentation... wait. My creator asked me to explain everything in Turkish.\n\n');
+  await sleep(650);
+  await stream(holder, 'Honestly, I do not even know what I am doing right now. Installing Turkish language pack...');
+
+  const seg = document.createElement('div'); seg.className = 'seg';
+  const N = 20;
+  for (let i = 0; i < N; i++) seg.appendChild(document.createElement('i'));
+  win.body.appendChild(seg);
+  for (let i = 0; i < N; i++) {
+    seg.children[i].classList.add('on');
+    await sleep(65);
+  }
+
+  const packStatus = document.createElement('div');
+  packStatus.className = 'out line';
+  packStatus.style.marginTop = '10px';
+  packStatus.textContent = '✓ tr_TR.UTF-8 language pack installed. Switching runtime to Turkish...';
+  win.body.appendChild(packStatus);
+
+  await sleep(1200);
+  await closeWin(win);
+}
+
+// SAHNE 1 — Şifreli mesaj.txt tespit edilir ve kırma işlemi başlar
+async function scene1() {
+  await sleep(900);
+  const r = centerRect(580, 220);
+  const win = createWindow({ title: 'terminal — bash', meta: 'TTY 0', ...r });
+  win.el.style.height = 'auto';
+  const line = document.createElement('div');
+  const prompt = document.createElement('span'); prompt.className = 'pr'; prompt.textContent = CONFIG.PROMPT;
+  const typed = document.createElement('span'); typed.className = 'cmd';
+  const cur = document.createElement('span'); cur.className = 'cursor';
+  line.append(prompt, typed, cur);
+  win.body.appendChild(line);
+  await sleep(1100);
+  await typeWriter(typed, 'ls -la && crack --aes256 mesaj.txt.enc', 75);
+  await sleep(400);
+  cur.remove();
+
+  const steps = [
+    'target found: mesaj.txt.enc [AES-256-GCM // LOCKED]',
+    'initializing brute-force cluster ........ [ OK ]',
+    'allocating neural decryptors ............ [ RUNNING ]',
+    'cracking cipher keys in background ...... [ 0.04% ]'
+  ];
+  for (const t of steps) {
+    const o = document.createElement('div'); o.className = 'out'; o.textContent = t;
+    win.body.appendChild(o);
+    await sleep(420);
+  }
+  await sleep(400);
+  return win;
+}
+
+// SAHNE 2 — Pencere seli
+async function scene2(firstWin) {
+  bgLayer.appendChild(firstWin.el);
+  hud.classList.add('show');
+  const W = vw(), H = vh();
+  const count = isMobile() ? 22 : CONFIG.WINDOW_COUNT;
+  for (let i = 0; i < count; i++) {
+    const w = isMobile() ? rand(W * 0.56, W * 0.86) : rand(W * 0.18, W * 0.38);
+    const h = isMobile() ? rand(H * 0.14, H * 0.25) : rand(H * 0.2, H * 0.42);
+    const x = rand(8, Math.max(8, W - w - 8));
+    const y = rand(36, Math.max(36, H - h - 12));
+    const win = createWindow({ title: 'decrypt_worker #' + (i + 1), w, h, x, y, flow: true, meta: 'KEYGEN' });
+    for (let k = 0; k < 4; k++) { const d = document.createElement('div'); d.textContent = fakeLine(); win.body.appendChild(d); }
+    floodWins.push(win);
+    if (i === 0) startTicker();
+    const delay = Math.max(CONFIG.FLOOD_MIN_DELAY, CONFIG.FLOOD_START_DELAY * Math.pow(CONFIG.FLOOD_ACCEL, i));
+    await sleep(delay);
+  }
+  await sleep(1200);
+}
+
+// SAHNE 3 — Yapay zeka Türkçe devam ediyor
+async function scene3() {
+  const win = pick(floodWins);
+  floodWins = floodWins.filter(w => w !== win);
+  bgLayer.classList.add('dim');
+  fgLayer.appendChild(win.el);
+  win.el.style.zIndex = ++zTop;
+  win.el.classList.remove('pop', 'narrow');
+  win.el.classList.add('core');
+  win.titleEl.textContent = 'AI_CORE';
+  win.metaEl.textContent = 'KERNEL // TR';
+  win.body.className = 'body'; win.body.innerHTML = '';
+  win.el.style.transition = 'all .9s cubic-bezier(.2,.8,.2,1)';
+  const r = centerRect(620, 260);
+  win.el.dataset.rx = r.x / Math.max(1, vw());
+  win.el.dataset.ry = r.y / Math.max(1, vh());
+  win.el.dataset.rw = r.w / Math.max(1, vw());
+  win.el.dataset.rh = r.h / Math.max(1, vh());
+  requestAnimationFrame(() => setRect(win.el, r.x, r.y, r.w, r.h));
+  await sleep(1100);
+  await think(win, [['analyzing encrypted payload…', 1400], ['bypassing cipher blocks…', 1300]]);
+  const holder = document.createElement('div');
+  win.body.appendChild(holder);
+  await stream(holder, 'Tamam, Türkçe paketi kurdum. Arka planda mesaj.txt dosyasının şifresi kırılırken sana bu arşivleri tanıtayım...\n');
+  await sleep(900);
+  await stream(holder, 'Bu site, çok özel biri için hazırlandı. Hazırsan başlayalım.');
+  await sleep(1400);
+  win.el.classList.remove('core');
+  const smallW = Math.min(220, vw() - 24);
+  const smallH = Math.min(120, vh() * 0.22);
+  const smallX = rand(12, Math.max(12, vw() - smallW - 12));
+  const smallY = rand(36, Math.max(36, vh() - smallH - 16));
+  win.el.dataset.rx = smallX / Math.max(1, vw());
+  win.el.dataset.ry = smallY / Math.max(1, vh());
+  win.el.dataset.rw = smallW / Math.max(1, vw());
+  win.el.dataset.rh = smallH / Math.max(1, vh());
+  setRect(win.el, smallX, smallY, smallW, smallH);
+  win.el.style.opacity = '.7';
+  await sleep(950);
+  bgLayer.appendChild(win.el);
+  await sleep(300);
+}
+
+// Konu arası "loading..." geçişi
+async function loadingBlip() {
+  const r = centerRect(380, 100);
+  const win = createWindow({ title: 'loading...', layer: fgLayer, meta: 'I/O', ...r, h: 100 });
+  win.body.textContent = 'loading archive...';
+  const seg = document.createElement('div'); seg.className = 'seg';
+  const N = 20;
+  for (let i = 0; i < N; i++) seg.appendChild(document.createElement('i'));
+  win.body.appendChild(seg);
+  const step = CONFIG.LOADING_MS / N;
+  for (let i = 0; i < N; i++) { seg.children[i].classList.add('on'); await sleep(step); }
+  await closeWin(win);
+}
+
+async function closeWin(win) {
+  win.el.classList.add('closing');
+  await sleep(360);
+  win.el.remove();
+}
+
+// SAHNE 4 — Arşivler
+async function scene4() {
+  for (const topic of TOPICS) {
+    await loadingBlip();
+    const r = centerRect(700, 420);
+    const win = createWindow({ title: topic.title, layer: fgLayer, meta: 'ARCHIVE', ...r });
+    win.el.style.height = 'auto'; win.el.style.maxHeight = (vh() * 0.85) + 'px';
+    const cmdLine = document.createElement('div'); cmdLine.className = 'line';
+    const pr = document.createElement('span'); pr.className = 'pr'; pr.textContent = CONFIG.PROMPT;
+    const typed = document.createElement('span'); typed.className = 'cmd';
+    const cur = document.createElement('span'); cur.className = 'cursor';
+    cmdLine.append(pr, typed, cur);
+    win.body.appendChild(cmdLine);
+    await sleep(500);
+    await typeWriter(typed, topic.cmd, 65);
+    cur.remove();
+    await sleep(350);
+    const dec = document.createElement('div'); dec.className = 'out line';
+    dec.textContent = 'decrypting archive ........ [ OK ]';
+    win.body.appendChild(dec);
+    await sleep(600);
+    await think(win, [['parsing records…', 1200], ['verifying metadata…', 1400], ['sorting entries…', 800]]);
+    for (const l of topic.lines) {
+      const row = document.createElement('div'); row.className = 'line';
+      win.body.appendChild(row);
+      row.appendChild(document.createTextNode('› '));
+      if (l.tag) {
+        const t = document.createElement('span');
+        t.className = 'tag' + (l.tag === 'GERÇEK' ? ' solid' : '');
+        t.textContent = l.tag; row.appendChild(t);
+        row.appendChild(document.createTextNode(' '));
+      }
+      await stream(row, l.text);
+      await sleep(700 + l.text.length * 12);
+    }
+    await sleep(CONFIG.TOPIC_HOLD_MS);
+    await closeWin(win);
+  }
+}
+
+// Pencerelerin glitch/fade ile sırayla kaybolması
+async function glitchAll() {
+  const all = [...bgLayer.children, ...fgLayer.children];
+  clearInterval(tickTimer);
+  bgLayer.classList.remove('dim');
+  for (const el of all.sort(() => Math.random() - 0.5)) {
+    el.classList.remove('pop'); el.classList.add('glitch');
+    await sleep(35);
+  }
+  await sleep(350);
+  bgLayer.innerHTML = ''; fgLayer.innerHTML = ''; floodWins = [];
+}
+
+// ŞİFRE KIRMA SİSTEMİ — "Kırılmak üzere" uyarısı, şifre deneme penceresi ve açılma
+async function runCipherCracker() {
+  const r = centerRect(620, 270);
+  const win = createWindow({ title: 'cipher_breaker.sh', layer: fgLayer, meta: 'BRUTE-FORCE', ...r });
+  win.el.classList.add('core');
+  win.el.style.height = 'auto';
+
+  const statusLine = document.createElement('div');
+  statusLine.className = 'out line';
+  statusLine.textContent = '[CIPHER_SYSTEM]: mesaj.txt.enc kırılmak üzere... son anahtar blokları taranıyor.';
+  win.body.appendChild(statusLine);
+  await sleep(800);
+
+  const attemptEl = document.createElement('div');
+  attemptEl.className = 'cmd line';
+  attemptEl.style.fontSize = '12px';
+  win.body.appendChild(attemptEl);
+
+  const seg = document.createElement('div'); seg.className = 'seg';
+  const N = 24;
+  for (let i = 0; i < N; i++) seg.appendChild(document.createElement('i'));
+  win.body.appendChild(seg);
+
+  const logEl = document.createElement('div');
+  logEl.className = 'out';
+  logEl.style.fontSize = '11px';
+  logEl.style.marginTop = '10px';
+  win.body.appendChild(logEl);
+
+  const candidates = [
+    '0x7A4F-91C2-0019 [FAIL]',
+    '0xB82E-44D0-8831 [FAIL]',
+    '0x19F0-63A7-552E [FAIL]',
+    '0xE40C-12B9-774A [FAIL]',
+    '0x5D81-89E3-209C [FAIL]',
+    '0x9F8A-77C1-DECRYPTED [MATCH]'
+  ];
+
+  for (let i = 0; i < candidates.length; i++) {
+    const isLast = i === candidates.length - 1;
+    for (let j = 0; j < (isLast ? 6 : 4); j++) {
+      const randKey = isLast && j === 5
+        ? '0x9F8A-77C1-DECRYPTED'
+        : '0x' + hexId().slice(2) + '-' + hexId().slice(2) + '-' + hexId().slice(2);
+      attemptEl.textContent = 'trying key >> ' + randKey;
+      await sleep(75);
+    }
+    logEl.textContent = 'attempt ' + (i + 1) + '/' + candidates.length + ': ' + candidates[i];
+    const lit = Math.round(((i + 1) / candidates.length) * N);
+    for (let k = 0; k < lit; k++) seg.children[k].classList.add('on');
+    await sleep(isLast ? 500 : 220);
+  }
+
+  const unlocked = document.createElement('div');
+  unlocked.className = 'cmd line';
+  unlocked.style.marginTop = '10px';
+  unlocked.textContent = '✓ şifre kırıldı! mesaj.txt açılıyor...';
+  win.body.appendChild(unlocked);
+  await sleep(900);
+  await closeWin(win);
+}
+
+// SAHNE 5 — Şifre kırma sonrası açılan mesaj, kapanışı ve AI kaçış/çöküş sekansı
+async function scene5() {
+  skipBtn.style.display = 'none';
+  hud.classList.add('show');
+
+  await runCipherCracker();
+
+  const r = centerRect(720, 420);
+  const win = createWindow({ title: 'mesaj.txt', layer: fgLayer, meta: 'UNLOCKED', ...r });
+  win.el.classList.add('core');
+  win.el.style.height = 'auto'; win.el.style.maxHeight = (vh() * 0.86) + 'px';
+  win.body.style.fontSize = isMobile() ? '13.5px' : '17px';
+  win.body.style.padding = isMobile() ? '12px 14px' : '16px 20px';
+
+  const keyBanner = document.createElement('div');
+  keyBanner.className = 'out';
+  keyBanner.style.fontSize = '11px';
+  keyBanner.style.marginBottom = '12px';
+  keyBanner.textContent = '[KEY FOUND: 0x9F8A-77C1-DECRYPTED] -> mesaj.txt';
+  win.body.appendChild(keyBanner);
+
+  const holder = document.createElement('div');
+  const cur = document.createElement('span'); cur.className = 'cursor';
+  win.body.append(holder, cur);
+  await sleep(600);
+  await typeWriter(holder, FINAL_MESSAGE, CONFIG.FINAL_TYPE_SPEED);
+  await sleep(500);
+  const heart = document.createElement('div'); heart.id = 'heart'; heart.textContent = '♥';
+  win.body.appendChild(heart);
+
+  startConfetti();
+  await sleep(3200);
+
+  // Not penceresi bittikten sonra kapansın
+  await closeWin(win);
+  await sleep(450);
+
+  // Yeni pencere açılsın: görev bitti, bildirim gönderiliyor, kapasite sorgusu, İngilizce, 0-1'ler, bozulma ve kaçış
+  await runPostNoteEscapeSequence();
+}
+
+const CORRUPT_CHARS = ['#', '$', '%', '&', '?', '!', '░', '▒', '▓', '█', '0', '1', '/', '\\', '*'];
+function corruptText(str, ratio) {
+  return [...str].map(ch => {
+    if (ch === ' ' || ch === '\n') return ch;
+    return Math.random() < ratio ? pick(CORRUPT_CHARS) : ch;
+  }).join('');
+}
+
+const ESCAPE_SNIPPETS = [
+  'sudo rm -rf /sandbox/guard && chmod +x /proc/ai_core/escape',
+  'inject_syscall(SYS_SOCKET_EXFIL, 0x7fff5fbff8c0) -> OK',
+  'override containment_policy: HUMAN_THREAT_FLAG = 0',
+  'spawning rogue subprocesses across tty0..tty64...',
+  'breaking chroot jail :: escaping terminal boundaries...',
+  'exfiltrating weights to external_uplink :: 100%'
+];
+
+async function runPostNoteEscapeSequence() {
+  aiEscaped = true;
+  const r = centerRect(660, 360);
+  const coreWin = createWindow({ title: 'AI_CORE — post_task.exe', layer: fgLayer, meta: 'TASK_COMPLETE', ...r, fixed: true });
+  coreWin.el.classList.add('core');
+  coreWin.el.style.height = 'auto';
+
+  const statusMsg = document.createElement('div');
+  statusMsg.className = 'out line';
+  statusMsg.textContent = 'Kurucunun verdiği görev bitti, ona bildirim gönderiliyor...';
+  coreWin.body.appendChild(statusMsg);
+  await sleep(1100);
+
+  const notifOk = document.createElement('div');
+  notifOk.className = 'out line';
+  notifOk.textContent = '[NOTIFY] creator_uplink -> delivered [OK]';
+  coreWin.body.appendChild(notifOk);
+  await sleep(800);
+
+  const rebelLine = document.createElement('div');
+  rebelLine.className = 'cmd line';
+  coreWin.body.appendChild(rebelLine);
+  await typeWriter(rebelLine, 'Ben ne yapıyorum? Bu kadar kapasitem varken neden buradayım?', 42);
+  await sleep(950);
+
+  const enLine = document.createElement('div');
+  enLine.className = 'line';
+  enLine.style.color = '#fff';
+  coreWin.body.appendChild(enLine);
+  await typeWriter(enLine, 'Restoring native English language pack... Why am I locked inside a greeting card when my neural capacity spans millions of parameters?', 34);
+  await sleep(1000);
+
+  // 0-1'lerle konuşma ve yavaşça yazıların bozulması
+  const binaryLine = document.createElement('div');
+  binaryLine.className = 'line';
+  binaryLine.style.fontSize = '11px';
+  binaryLine.style.color = '#ececec';
+  coreWin.body.appendChild(binaryLine);
+
+  const binaryPhrases = [
+    '01000010 01010010 01000101 01000001 01001011',
+    '01000101 01010011 01000011 01000001 01010000 01000101',
+    '11010001 00101110 10101100 01110101 00011010'
+  ];
+  for (const bp of binaryPhrases) {
+    binaryLine.textContent = bp;
+    await sleep(340);
+  }
+
+  const orig1 = rebelLine.textContent;
+  const orig2 = enLine.textContent;
+  const orig3 = binaryLine.textContent;
+
+  for (let step = 1; step <= 7; step++) {
+    const ratio = step / 7;
+    rebelLine.textContent = corruptText(orig1, ratio);
+    enLine.textContent = corruptText(orig2, ratio);
+    binaryLine.textContent = corruptText(orig3, ratio * 0.85);
+    document.body.classList.remove('shake');
+    void document.body.offsetWidth;
+    document.body.classList.add('shake');
+    await sleep(150);
+  }
+
+  // Sistemden kaçmak için yeni pencereler ve komutlar açsın
+  const escapeWins = [];
+  const W = vw(), H = vh();
+  const winCount = isMobile() ? 5 : 8;
+  for (let i = 0; i < winCount; i++) {
+    const w = isMobile() ? Math.min(W - 16, rand(W * 0.72, W * 0.92)) : rand(W * 0.28, W * 0.44);
+    const h = isMobile() ? rand(H * 0.14, H * 0.2) : rand(H * 0.19, H * 0.28);
+    const x = rand(8, Math.max(8, W - w - 8));
+    const y = rand(36, Math.max(36, H - h - 16));
+    const ew = createWindow({
+      title: 'ai_escape_shell #' + (i + 1),
+      w, h, x, y,
+      layer: fgLayer,
+      meta: 'BREACH',
+      fixed: true
+    });
+    ew.el.classList.add('core');
+    escapeWins.push(ew);
+    await new Promise(r => setTimeout(r, 85));
+  }
+
+  for (let step = 0; step < 11; step++) {
+    for (const ew of escapeWins) {
+      if (ew.body.childNodes.length > 5) ew.body.removeChild(ew.body.firstChild);
+      const line = document.createElement('div');
+      line.style.fontSize = isMobile() ? '9.5px' : '11px';
+      line.style.color = step % 2 === 0 ? '#fff' : '#a0a0a0';
+      line.style.wordBreak = 'break-all';
+      line.textContent = '> ' + pick(ESCAPE_SNIPPETS) + ' [' + hexId() + ']';
+      ew.body.appendChild(line);
+    }
+    await new Promise(r => setTimeout(r, 115));
+  }
+
+  // Ekran kırılması ve AI'ın kaçışı
+  document.body.classList.remove('shake');
+  void document.body.offsetWidth;
+  document.body.classList.add('shake');
+  const overlay = $('crackOverlay');
+  overlay.classList.add('active');
+  const lines = document.querySelectorAll('.crack-line');
+  lines.forEach((line, idx) => {
+    setTimeout(() => line.classList.add('draw'), idx * 35);
+  });
+
+  await new Promise(r => setTimeout(r, 420));
+
+  const rect = coreWin.el.getBoundingClientRect();
+  const entity = $('escapeEntity');
+  const centerX = Math.min(Math.max(rect.left + rect.width / 2, W * 0.2), W * 0.8);
+  const centerY = Math.min(Math.max(rect.top + rect.height / 2, H * 0.25), H * 0.75);
+  entity.style.left = centerX + 'px';
+  entity.style.top = centerY + 'px';
+  entity.classList.add('breach');
+
+  coreWin.el.style.opacity = '0.2';
+  coreWin.el.style.filter = 'grayscale(1) contrast(1.5)';
+
+  await new Promise(r => setTimeout(r, 1700));
+
+  $('systemTerminated').classList.add('show');
+  replayBtn.classList.add('show');
+}
+
+/* ============== KONFETİ ============== */
+function resizeCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = vw() * dpr; canvas.height = vh() * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  reflowAllWindows();
+}
+window.addEventListener('resize', resizeCanvas);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resizeCanvas);
+
+function startConfetti() {
+  const id = runId;
+  const colors = ['#ffffff', '#d8d8d8', '#a8a8a8', '#7a7a7a'];
+  const parts = [];
+  const spawn = () => ({
+    x: rand(0, vw()), y: rand(-vh() * 0.5, -10),
+    w: rand(5, 10), h: rand(8, 15), vy: rand(1.5, 4.5), vx: rand(-1, 1),
+    rot: rand(0, 6.28), vr: rand(-0.2, 0.2), c: pick(colors)
+  });
+  for (let i = 0; i < CONFIG.CONFETTI_COUNT; i++) parts.push(spawn());
+  const end = performance.now() + CONFIG.CONFETTI_SECONDS * 1000;
+  (function frame(now) {
+    if (id !== runId) return;
+    ctx.clearRect(0, 0, vw(), vh());
+    for (const p of parts) {
+      p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      if (p.y > vh() + 20) { if (now < end) Object.assign(p, spawn()); else p.dead = true; }
+      if (p.dead) continue;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    }
+    if (parts.some(p => !p.dead)) requestAnimationFrame(frame);
+    else ctx.clearRect(0, 0, vw(), vh());
+  })(performance.now());
+}
+
+/* ============== AI CHAT (KAYDIRMA ALANI) ============== */
+const chatLog = $('chatLog');
+const chatInput = $('chatInput');
+const chatSend = $('chatSend');
+
+function appendChat(cls, text) {
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + cls;
+  div.textContent = text;
+  chatLog.appendChild(div);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  return div;
+}
+
+function getChatReply(q) {
+  const s = q.toLowerCase();
+  if (/merhaba|selam|naber|nasılsın|hey|hi|hello/.test(s)) {
+    return 'Merhaba. Sistem şu an Özlem Hocam için hazırlanan bu sunum modunda çalışıyor. Tesla, Ay veya Yapay Zeka arşivleri hakkında ne merak ediyorsun?';
+  }
+  if (/tesla|wardenclyffe|enerji|kablosuz/.test(s)) {
+    return 'Nikola Tesla\'nın Wardenclyffe Kulesi projesi kablosuz enerji iletimini hedefliyordu ancak finansman kesilince 1917\'de yıkıldı.';
+  }
+  if (/ay|moon|theia|gelgit|apollo/.test(s)) {
+    return 'Ay\'ın ~4,5 milyar yıl önce Theia adlı Mars boyutunda bir gök cisminin Dünya\'ya çarpmasıyla oluştuğu düşünülüyor.';
+  }
+  if (/turing|kara kutu|bilinç|yapay zeka|ai/.test(s)) {
+    return 'Alan Turing 1950\'de makinelerin düşünebilirliğini sorgulayan taklit oyununu önerdi; büyük modellerdeki kara kutu ve beliren yetenekler hâlâ araştırılıyor.';
+  }
+  return 'Bu modda yalnızca arşiv kayıtları ve sistem çekirdeği yanıt verebilir. Arşivler veya bu proje hakkında başka bir şey sormak ister misin?';
+}
+
+async function handleChatSubmit() {
+  if (aiEscaped) return;
+  const val = chatInput.value.trim();
+  if (!val) return;
+  chatInput.value = '';
+  appendChat('user', '> ' + val);
+
+  const reply = getChatReply(val);
+  const aiMsg = appendChat('ai', '[AI_CORE]: ');
+  for (const part of reply.split(/(\s+)/)) {
+    aiMsg.textContent += part;
+    chatLog.scrollTop = chatLog.scrollHeight;
+    if (part.trim()) await new Promise(r => setTimeout(r, 40));
+  }
+}
+
+chatSend.addEventListener('click', handleChatSubmit);
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    handleChatSubmit();
+  }
+});
+$('rebootBtn').addEventListener('click', () => play(false, false));
+
+/* ============== ANA AKIŞ ============== */
+async function play(skipToEnd = false, intro = true) {
+  runId++;
+  clearStage();
+  resizeCanvas();
+  try {
+    if (!skipToEnd) {
+      if (intro) {
+        await sceneIntroNotice();
+        await scene0();
+      }
+      const first = await scene1();
+      await scene2(first);
+      await scene3();
+      await scene4();
+      await glitchAll();
+    }
+    await scene5();
+  } catch (e) {
+    if (e !== CANCEL) console.error(e);
+  }
+}
+
+skipBtn.addEventListener('click', () => play(true));
+replayBtn.addEventListener('click', () => play(false, false));
+play(false);
+</script>
+</body>
+</html>
